@@ -92,6 +92,11 @@ function onlyDigits(value) {
   return String(value || '').replace(/\D/g, '');
 }
 
+function normalizeCustomerName(value) {
+  const words = String(value || '').trim().replace(/\s+/g, ' ').split(' ').filter(Boolean);
+  return words.slice(0, 2).join(' ');
+}
+
 function normalizeNameForEmail(value) {
   return String(value || '')
     .normalize('NFD')
@@ -325,13 +330,13 @@ app.post('/api/pix', limitPixRequests, async (req, res) => {
   const requestId = crypto.randomUUID();
 
   try {
-    let payerName = String(req.body.payer_name || '').trim().replace(/\s+/g, ' ');
+    let payerName = normalizeCustomerName(req.body.payer_name);
     const amountCents = normalizeAmount(req.body.amount);
 
     if (payerName.length < 3 || payerName.length > 120) payerName = 'Cliente Online';
 
-    // Dados padrão solicitados para o cadastro enviado à Firebot.
-    // Exemplo: "Ana Silva" -> "anasilva99876@gmail.com".
+    // A Firebot recebe somente o primeiro e o segundo nome.
+    // Exemplo: "Ana Silva Souza" -> nome "Ana Silva" e e-mail "anasilva99876@gmail.com".
     const payerCpf = DEFAULT_CUSTOMER_CPF;
     const payerEmail = buildDefaultCustomerEmail(payerName);
     const payerPhone = DEFAULT_CUSTOMER_PHONE;
