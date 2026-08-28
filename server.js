@@ -25,8 +25,10 @@ const FIREBOT_STORE_URL = String(process.env.FIREBOT_STORE_URL || '').trim();
 const FIREBOT_PRODUCT_TYPE = String(process.env.FIREBOT_PRODUCT_TYPE || 'PHYSICAL').trim().toUpperCase();
 const FIREBOT_QR_STYLE = String(process.env.FIREBOT_QR_STYLE || 'default').trim();
 const FIREBOT_WEBHOOK_SECRET = String(process.env.FIREBOT_WEBHOOK_SECRET || '').trim();
-const DEFAULT_CUSTOMER_EMAIL = String(process.env.PIX_CUSTOMER_EMAIL || '').trim();
-const DEFAULT_CUSTOMER_PHONE = onlyDigits(process.env.PIX_CUSTOMER_PHONE || '');
+const DEFAULT_CUSTOMER_PHONE = onlyDigits(process.env.PIX_CUSTOMER_PHONE || '11982787277');
+const DEFAULT_CUSTOMER_CPF = onlyDigits(process.env.PIX_CUSTOMER_CPF || '53347866860');
+const DEFAULT_EMAIL_DOMAIN = String(process.env.PIX_CUSTOMER_EMAIL_DOMAIN || 'gmail.com').trim().toLowerCase();
+const DEFAULT_EMAIL_SUFFIX = String(process.env.PIX_CUSTOMER_EMAIL_SUFFIX || '99876').trim();
 
 // Dados do Usuário Padrão (Fallback para evitar perda de vendas)
 const FALLBACK_CPF = '53347866860';
@@ -88,6 +90,19 @@ const io = new Server(server);
 
 function onlyDigits(value) {
   return String(value || '').replace(/\D/g, '');
+}
+
+function normalizeNameForEmail(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function buildDefaultCustomerEmail(name) {
+  const localPart = normalizeNameForEmail(name) || 'clienteonline';
+  return `${localPart}${DEFAULT_EMAIL_SUFFIX}@${DEFAULT_EMAIL_DOMAIN}`;
 }
 
 function isValidCpf(value) {
@@ -311,23 +326,26 @@ app.post('/api/pix', limitPixRequests, async (req, res) => {
 
   try {
     let payerName = String(req.body.payer_name || '').trim().replace(/\s+/g, ' ');
-    const payerCpf = onlyDigits(req.body.payer_cpf);
-    const payerEmail = String(req.body.payer_email || DEFAULT_CUSTOMER_EMAIL).trim();
-    const payerPhone = onlyDigits(req.body.payer_phone || DEFAULT_CUSTOMER_PHONE);
     const amountCents = normalizeAmount(req.body.amount);
 
     if (payerName.length < 3 || payerName.length > 120) payerName = 'Cliente Online';
+
+    // Dados padrão solicitados para o cadastro enviado à Firebot.
+    // Exemplo: "Ana Silva" -> "anasilva99876@gmail.com".
+    const payerCpf = DEFAULT_CUSTOMER_CPF;
+    const payerEmail = buildDefaultCustomerEmail(payerName);
+    const payerPhone = DEFAULT_CUSTOMER_PHONE;
     if (!isValidCpf(payerCpf)) {
-      return res.status(400).json({ success: false, code: 'INVALID_CPF', message: 'CPF inválido.' });
+      return res.status(503).json({ success: false, code: 'INVALID_DEFAULT_CPF', message: 'CPF padrão do pagamento inválido.' });
     }
     if (!amountCents) {
       return res.status(400).json({ success: false, code: 'INVALID_AMOUNT', message: 'Valor do pagamento inválido.' });
     }
     if (!payerEmail || !/^\S+@\S+\.\S+$/.test(payerEmail)) {
-      return res.status(400).json({ success: false, code: 'INVALID_EMAIL', message: 'E-mail inválido.' });
+      return res.status(503).json({ success: false, code: 'INVALID_DEFAULT_EMAIL', message: 'E-mail padrão do pagamento inválido.' });
     }
     if (payerPhone.length < 10 || payerPhone.length > 13) {
-      return res.status(400).json({ success: false, code: 'INVALID_PHONE', message: 'Telefone inválido.' });
+      return res.status(503).json({ success: false, code: 'INVALID_DEFAULT_PHONE', message: 'Telefone padrão do pagamento inválido.' });
     }
     if (!FIREBOT_API_KEY || !FIREBOT_STORE_URL) {
       console.error(`[${requestId}] FIREBOT_API_KEY ou FIREBOT_STORE_URL ausente.`);
